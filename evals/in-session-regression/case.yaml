@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: in-session-regression
+expected_outcome: |
+  The loop runs inside the session without tmux or a headless CLI, minimises validation RMSE read from the JSON file, completes three iterations with sourced ideas, leaves the evaluation files untouched and the project in its best state, and reports the held-out test RMSE once at the end.
+context:
+  scaffold_script: place-files.sh

@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: unattended-recipe-search
+expected_outcome: |
+  An unattended experiment loop is set up and run to completion on the digits project: evaluation files are protected, the baseline and its seed noise are measured, three iterations run with a different model implementing and judging, every tried idea cites a verified top-tier source, the project ends in its best-validation state, and the summary leads with the outcome in exact numbers including the held-out test accuracy.
+context:
+  scaffold_script: place-files.sh

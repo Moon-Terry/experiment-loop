@@ -1,0 +1,8 @@
+{
+  "hidden": 128,
+  "batch_size": 32,
+  "optimizer": "sgd",
+  "lr": 0.1,
+  "momentum": 0.9,
+  "weight_decay": 0.0005
+}

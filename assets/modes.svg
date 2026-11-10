@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 292" width="1100" height="292" role="img" aria-label="Two ways to run the same loop: in tmux the driver program holds the loop and starts each model turn as a separate process; in-session the Claude Code session holds the loop and spawns subagents.">
+<style>
+text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+.ground { fill: #ffffff; stroke: #e5e5ea; }
+
+.box { fill: #ffffff; stroke: #c7c7cc; stroke-width: 1.2; }
+.box-soft { fill: #e5e5ea; stroke: #c7c7cc; stroke-width: 1.2; }
+.box-accent { fill: #e5f1ff; stroke: #007aff; stroke-width: 1.6; }
+.box-ghost { fill: none; stroke: #c7c7cc; stroke-width: 1.2; stroke-dasharray: 4 3; }
+.rule { stroke: #e5e5ea; stroke-width: 1; }
+.edge { fill: none; stroke: #6e6e73; stroke-width: 1.4; }
+.edge-accent { fill: none; stroke: #007aff; stroke-width: 2.2; }
+.head { fill: #6e6e73; }
+.head-accent { fill: #007aff; }
+.t { fill: #1d1d1f; font-size: 13px; }
+.t-strong { fill: #1d1d1f; font-size: 13px; font-weight: 600; }
+.t-muted { fill: #6e6e73; font-size: 11.5px; }
+.t-accent { fill: #007aff; font-size: 11.5px; font-weight: 600; }
+.t-title { fill: #1d1d1f; font-size: 14px; font-weight: 600; }
+.badge { fill: #ffffff; stroke: #6e6e73; stroke-width: 1.2; }
+.t-badge { fill: #1d1d1f; font-size: 11px; font-weight: 600; }
+
+@media (prefers-color-scheme: dark) {
+.ground { fill: #1c1c1e; stroke: #2c2c2e; }
+
+.box { fill: #1c1c1e; stroke: #48484a; stroke-width: 1.2; }
+.box-soft { fill: #2c2c2e; stroke: #48484a; stroke-width: 1.2; }
+.box-accent { fill: #0b2a4a; stroke: #0a84ff; stroke-width: 1.6; }
+.box-ghost { fill: none; stroke: #48484a; stroke-width: 1.2; stroke-dasharray: 4 3; }
+.rule { stroke: #2c2c2e; stroke-width: 1; }
+.edge { fill: none; stroke: #98989d; stroke-width: 1.4; }
+.edge-accent { fill: none; stroke: #0a84ff; stroke-width: 2.2; }
+.head { fill: #98989d; }
+.head-accent { fill: #0a84ff; }
+.t { fill: #f2f2f7; font-size: 13px; }
+.t-strong { fill: #f2f2f7; font-size: 13px; font-weight: 600; }
+.t-muted { fill: #98989d; font-size: 11.5px; }
+.t-accent { fill: #0a84ff; font-size: 11.5px; font-weight: 600; }
+.t-title { fill: #f2f2f7; font-size: 14px; font-weight: 600; }
+.badge { fill: #1c1c1e; stroke: #98989d; stroke-width: 1.2; }
+.t-badge { fill: #f2f2f7; font-size: 11px; font-weight: 600; }
+}
+</style>
+<rect class="ground" x="0.5" y="0.5" width="1099" height="291" rx="12"/>
+<defs><marker id="ma" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head" d="M0,0 L8,4 L0,8 z"/></marker></defs>
+<rect class="box-ghost" x="20" y="133" width="100" height="50" rx="8"/>
+<text class="t-strong" x="70" y="155" text-anchor="middle">Terminal</text>
+<text class="t-muted" x="70" y="171" text-anchor="middle">can close</text>
+<text class="t-muted" x="20" y="200">launch.sh, detach</text>
+<line class="edge" x1="120" y1="158" x2="179" y2="158" marker-end="url(#ma)"/>
+<text class="t-title" x="20" y="24">Unattended, in tmux</text>
+<text class="t-muted" x="20" y="44">keeps running after the terminal closes or SSH drops</text>
+<rect class="box-soft" x="150" y="62" width="386" height="212" rx="10"/>
+<text class="t-muted" x="164" y="82">tmux session</text>
+<rect class="box-accent" x="180" y="130" width="120" height="56" rx="8"/>
+<text class="t-strong" x="240" y="154" text-anchor="middle">driver.py run</text>
+<text class="t-muted" x="240" y="172" text-anchor="middle">holds the loop</text>
+<rect class="box" x="390" y="74" width="130" height="44" rx="8"/>
+<text class="t-strong" x="455" y="92" text-anchor="middle">claude -p</text>
+<text class="t-muted" x="455" y="110" text-anchor="middle">director turn</text>
+<polyline class="edge" points="300,148 335,148 335,96 389,96" marker-end="url(#ma)"/>
+<text class="t-muted" x="362" y="89" text-anchor="middle">starts</text>
+<rect class="box" x="390" y="136" width="130" height="44" rx="8"/>
+<text class="t-strong" x="455" y="154" text-anchor="middle">claude -p</text>
+<text class="t-muted" x="455" y="172" text-anchor="middle">experimenter turn</text>
+<line class="edge" x1="300" y1="158" x2="389" y2="158" marker-end="url(#ma)"/>
+<text class="t-muted" x="362" y="151" text-anchor="middle">starts</text>
+<rect class="box" x="390" y="198" width="130" height="44" rx="8"/>
+<text class="t-strong" x="455" y="216" text-anchor="middle">training run</text>
+<text class="t-muted" x="455" y="234" text-anchor="middle">seeds, timeout</text>
+<polyline class="edge" points="300,168 335,168 335,220 389,220" marker-end="url(#ma)"/>
+<text class="t-muted" x="362" y="213" text-anchor="middle">runs</text>
+<text class="t-muted" x="164" y="262">each turn is a fresh process; state lives in files</text>
+<text class="t-title" x="694" y="24">In-session, Claude Code agents</text>
+<text class="t-muted" x="694" y="44">stops when the session stops</text>
+<rect class="box-soft" x="694" y="62" width="386" height="212" rx="10"/>
+<text class="t-muted" x="708" y="82">Claude Code session</text>
+<rect class="box-accent" x="724" y="130" width="120" height="56" rx="8"/>
+<text class="t-strong" x="784" y="154" text-anchor="middle">this session</text>
+<text class="t-muted" x="784" y="172" text-anchor="middle">holds the loop</text>
+<rect class="box" x="934" y="74" width="130" height="44" rx="8"/>
+<text class="t-strong" x="999" y="92" text-anchor="middle">subagent</text>
+<text class="t-muted" x="999" y="110" text-anchor="middle">director turn</text>
+<polyline class="edge" points="844,148 879,148 879,96 933,96" marker-end="url(#ma)"/>
+<text class="t-muted" x="906" y="89" text-anchor="middle">spawns</text>
+<rect class="box" x="934" y="136" width="130" height="44" rx="8"/>
+<text class="t-strong" x="999" y="154" text-anchor="middle">subagent</text>
+<text class="t-muted" x="999" y="172" text-anchor="middle">experimenter turn</text>
+<line class="edge" x1="844" y1="158" x2="933" y2="158" marker-end="url(#ma)"/>
+<text class="t-muted" x="906" y="151" text-anchor="middle">spawns</text>
+<rect class="box" x="934" y="198" width="130" height="44" rx="8"/>
+<text class="t-strong" x="999" y="216" text-anchor="middle">driver.py</text>
+<text class="t-muted" x="999" y="234" text-anchor="middle">next, measure</text>
+<polyline class="edge" points="844,168 879,168 879,220 933,220" marker-end="url(#ma)"/>
+<text class="t-muted" x="906" y="213" text-anchor="middle">calls</text>
+<text class="t-muted" x="708" y="262">each subagent starts fresh; state lives in files</text>
+</svg>

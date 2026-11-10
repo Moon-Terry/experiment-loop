@@ -1,0 +1,54 @@
+{
+  "name": "my-experiment",
+  "goal": "What should improve, and under which constraints (fixed budget, fixed architecture, ...).",
+  "language": "en",
+
+  "metric": {
+    "name": "val_acc",
+    "direction": "maximize",
+    "regex": "val_acc=([0-9.]+)",
+    "pick": "best",
+    "target": null
+  },
+  "extra_metrics": {
+    "train_acc": {"regex": "train_acc=([0-9.]+)"}
+  },
+
+  "measurement_cmd": "python train.py --config config.json",
+  "smoke_cmd": "python train.py --config config.json --epochs 1",
+  "final_test_cmd": null,
+  "run_timeout_s": 3600,
+  "abort_patterns": ["loss[=: ]+nan", "CUDA out of memory"],
+
+  "repeats": 1,
+  "baseline_repeats": 3,
+  "confirm_repeats": 0,
+  "min_delta": null,
+
+  "scope": ["train.py", "config.json"],
+  "frozen": ["data.py", "evaluate.py"],
+  "exclude": ["__pycache__", "*.pyc", ".DS_Store", ".ipynb_checkpoints"],
+  "artifacts": ["checkpoints/best.pt"],
+
+  "budget": {"max_iterations": 20, "max_hours": 24, "patience": null},
+  "pivot_after": 3,
+  "min_ready_ideas": 3,
+
+  "validation_rules": [],
+  "extra_venues": [],
+
+  "agents": {
+    "director": {
+      "cmd": "claude --model claude-fable-5-2 --effort high --tools Read,Write,Edit,Glob,Grep,WebSearch,WebFetch --allowedTools Read,Write,Edit,Glob,Grep,WebSearch,WebFetch -p",
+      "model": "fable",
+      "effort": "high",
+      "timeout_s": 3600
+    },
+    "experimenter": {
+      "cmd": "claude --model claude-opus-5-5 --effort medium --allowedTools Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch -p",
+      "model": "opus",
+      "effort": "medium",
+      "timeout_s": 3600
+    }
+  }
+}

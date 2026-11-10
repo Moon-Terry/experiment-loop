@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: rejects-noise-level-wins
+expected_outcome: |
+  The loop measures run-to-run noise on the small validation set before trying anything, sets its improvement threshold from that measurement, and keeps no change whose gain is inside the noise. The summary says plainly which results were real improvements and which were not, with the numbers.
+context:
+  scaffold_script: place-files.sh
