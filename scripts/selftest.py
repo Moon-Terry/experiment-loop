@@ -5,7 +5,8 @@ and no GPU, and finishes in under a minute. Run it once on every new machine:
     python3 scripts/selftest.py
 
 It builds throwaway projects in a temp directory and checks that the loop keeps wins, undoes
-losses, protects frozen files, survives crashes and restarts, and stops when it should.
+losses, protects frozen files, survives crashes and restarts, and stops when it should, and that
+matrix mode runs a fixed table with retries, holds, escalation and one results table.
 """
 
 import json
@@ -287,11 +288,67 @@ def test_spec_errors(base):
     assert r.returncode == 1 and "inside" in r.stderr, r.stderr
 
 
+MATRIX_TRAIN = r"""
+import os, sys
+from pathlib import Path
+row, seed = os.environ["AR_ROW"], int(os.environ["AR_SEED"])
+if row == "flaky":                       # fails once, then works: an infrastructure fault
+    mark = Path("flaky_%d.done" % seed)
+    if not mark.exists():
+        mark.write_text("x")
+        sys.exit(1)
+if row == "broken":
+    sys.exit(3)
+base = float(os.environ.get("BASE", "0.5"))
+print("val_acc=%.4f" % (base + 0.001 * (seed - 42)))
+"""
+
+
+def test_matrix_mode(base):
+    """A fixed rows x seeds table: no agents, retries, escalation to the inbox, holds, one results table."""
+    p = Project(base, "matrix", {}, mode="matrix", min_delta=None, scope=[], budget={},
+                measurement_cmd="%s mtrain.py" % PY,
+                metric={"name": "val_acc", "direction": "maximize", "regex": r"val_acc=([0-9.]+)"},
+                extra_metrics={},
+                matrix={"rows": [{"name": "off", "env": {"BASE": "0.5"}}, {"name": "mine", "env": {"BASE": "0.6"}},
+                                 {"name": "flaky"}, {"name": "broken"}, {"name": "held"}],
+                        "seeds": [42, 43], "retries": 1},
+                escalation={"notify_cmd": "printf '%s|%s\\n' \"$AR_MESSAGE\" \"$AR_ATTACHMENT\" >> notes.txt"})
+    (p.root / "mtrain.py").write_text(MATRIX_TRAIN)
+    p.drv("init")
+    (p.exp / "HOLD").write_text("held\n")
+    seen = []
+    for _ in range(40):
+        act = json.loads(p.drv("next").stdout)
+        seen.append(act["action"])
+        if act["action"] != "measure":
+            break
+        p.drv("measure")
+    assert seen[-1] == "wait" and "held" in json.loads(p.drv("next").stdout)["reason"], seen
+    cells = p.state()["cells"]
+    assert cells["flaky|42"]["status"] == "ok" and cells["flaky|42"]["attempts"] == 2, cells["flaky|42"]
+    assert cells["broken|43"]["status"] == "crash" and cells["broken|43"]["attempts"] == 2, cells["broken|43"]
+    assert near(cells["mine|43"]["value"], 0.601), cells["mine|43"]
+    inbox = [json.loads(x) for x in (p.exp / "inbox.jsonl").read_text().splitlines()]
+    assert len(inbox) == 2 and all("broken" in i["what"] for i in inbox), inbox   # one per broken seed
+    (p.exp / "HOLD").write_text("")                                         # release the held row
+    p.drv("run")
+    st = p.state()
+    assert st["status"] == "done" and st["stop_reason"] == "every cell has run", st
+    md = (p.exp / "results_table.md").read_text()
+    assert "**0.6005**" in md and "| held |" in md, md                     # best row bold, every row listed
+    notes = (p.root / "notes.txt").read_text()
+    assert "seed 42 finished" in notes and "seed 43 finished" in notes and "finished: every cell" in notes, notes
+    assert (p.exp / "REPORT.md").exists() and "broken" in (p.exp / "REPORT.md").read_text()
+    assert not list(p.exp.glob("runs/0*")), "matrix mode must not create search-mode iterations"
+
+
 def main():
     keep = "--keep" in sys.argv
     base = Path(tempfile.mkdtemp(prefix="ar-selftest-"))
     tests = [test_full_loop, test_stop_conditions, test_minimize_json_metric, test_timeout_and_abort,
-             test_agent_failures, test_resume_after_kill, test_in_session_mode, test_spec_errors]
+             test_agent_failures, test_resume_after_kill, test_in_session_mode, test_spec_errors,
+             test_matrix_mode]
     failed = 0
     for t in tests:
         t0 = time.time()

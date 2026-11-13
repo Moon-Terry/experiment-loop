@@ -18,6 +18,11 @@ Commands:
   measure   run the measurement for the current iteration (in-session mode)
   status    print a summary
 
+Two modes (experiment.json "mode"):
+  search    (default) design -> plan -> perform -> evaluate -> validate -> decide, keeping the best state
+  matrix    a fixed, pre-registered table of rows x seeds, run once each in seed-major order; no agent
+            chooses what runs next, so results cannot steer the experiment
+
 Standard library only, Python 3.8+.
 """
 
@@ -64,7 +69,12 @@ DEFAULTS = {
     "min_ready_ideas": 3,
     "max_snapshot_mb": 500,
     "agents": {},
+    "mode": "search",
+    "matrix": {},
+    "escalation": {},
+    "report": {},
 }
+MATRIX_TSV = ["time", "row", "seed", "status", "metric", "extra", "duration_s", "detail"]
 
 LIVE = []  # running child processes, killed if the driver is interrupted
 
@@ -202,7 +212,22 @@ class Exp:
         need(m.get("name"), "metric.name is required")
         need(m.get("direction") in ("maximize", "minimize"), "metric.direction must be maximize or minimize")
         need(m.get("pick", "last") in ("last", "best"), "metric.pick must be last or best")
-        need(isinstance(s.get("scope"), list) and s["scope"], "scope must list at least one file or directory")
+        need(s["mode"] in ("search", "matrix"), "mode must be search or matrix")
+        if s["mode"] == "search":
+            need(isinstance(s.get("scope"), list) and s["scope"], "scope must list at least one file or directory")
+        else:
+            s.setdefault("scope", [])
+            mx = s["matrix"]
+            rows = mx.get("rows")
+            need(isinstance(rows, list) and rows and all(isinstance(r, dict) and r.get("name") for r in rows),
+                 "matrix.rows must list at least one row, each with a name")
+            names = [r["name"] for r in rows]
+            need(len(set(names)) == len(names), "matrix.rows names must be unique")
+            need(all(re.match(r"^[A-Za-z0-9_.+-]+$", n) for n in names),
+                 "matrix.rows names may use letters, digits and _ . + - only")
+            seeds = mx.get("seeds")
+            need(isinstance(seeds, list) and seeds and all(isinstance(x, int) for x in seeds),
+                 "matrix.seeds must list at least one integer seed")
         for key in ("scope", "frozen", "artifacts"):
             for rel in s[key]:
                 p = (self.root / rel).resolve()
@@ -213,7 +238,7 @@ class Exp:
         need(not set(s["scope"]) & set(s["frozen"]), "a path cannot be both in scope and frozen")
         b = s["budget"]
         need(isinstance(b, dict), "budget must be an object")
-        need(any(b.get(k) for k in ("max_iterations", "max_hours", "patience"))
+        need(s["mode"] == "matrix" or any(b.get(k) for k in ("max_iterations", "max_hours", "patience"))
              or m.get("target") is not None or b.get("unbounded") is True,
              "set budget.max_iterations, budget.max_hours, budget.patience or metric.target, "
              "or say budget.unbounded=true to run until stopped by hand")
@@ -544,6 +569,267 @@ def append_row(exp, row):
         f.write("\t".join(re.sub(r"\s+", " ", fmt(row.get(h))) for h in HEADER) + "\n")
 
 
+# ------------------------------------------------- escalation and reporting
+
+def notify(exp, message, attachment=None):
+    """Hand a message (and optionally an image) to escalation.notify_cmd, if one is set. Never raises."""
+    cmd = exp.spec["escalation"].get("notify_cmd")
+    if not cmd:
+        return False
+    logs = exp.dir / "agent_logs"
+    logs.mkdir(exist_ok=True)
+    msg_file = logs / ("notify.%s.txt" % time.strftime("%Y%m%d-%H%M%S"))
+    msg_file.write_text(message + "\n", encoding="utf-8")
+    env = {"AR_MESSAGE": message, "AR_MESSAGE_FILE": str(msg_file),
+           "AR_ATTACHMENT": str(attachment) if attachment and Path(attachment).is_file() else ""}
+    try:
+        status, detail, _ = run_cmd(exp, cmd, Path(str(msg_file) + ".log"), 120, env)
+    except OSError as e:
+        status, detail = "crash", str(e)
+    if status != "ok":
+        log("notify_cmd failed: %s %s" % (status, detail))
+    return status == "ok"
+
+
+def escalate(exp, severity, what, options=None, evidence=None, attachment=None):
+    """Put a decision only a person can make into inbox.jsonl and notify. Does not wait for an answer:
+    the caller holds only the affected item and keeps the rest of the work going."""
+    item = {"id": "%s-%s" % (time.strftime("%Y%m%d-%H%M%S"), hashlib.sha1(what.encode()).hexdigest()[:6]),
+            "time": now(), "experiment": exp.spec["name"], "severity": severity, "what": what,
+            "options": options or [], "evidence": [str(e) for e in (evidence or [])]}
+    inbox = exp.dir / exp.spec["escalation"].get("inbox", "inbox.jsonl")
+    with open(inbox, "a", encoding="utf-8") as f:
+        f.write(json.dumps(item, ensure_ascii=False) + "\n")
+    (exp.dir / "ack").mkdir(exist_ok=True)
+    lines = ["[%s] %s: %s" % (exp.spec["name"], severity, what)]
+    lines += ["- option: %s" % o for o in item["options"]]
+    lines.append("inbox id %s; answer by writing %s" % (item["id"], exp.dir / "ack" / (item["id"] + ".txt")))
+    notify(exp, "\n".join(lines), attachment)
+    log("escalated %s: %s" % (item["id"], what))
+    return item
+
+
+def write_table(exp):
+    """Render the matrix results as one table: markdown always, LaTeX (booktabs) always, PNG when
+    report.render_cmd is set. Returns the PNG path or None."""
+    s, st = exp.spec, exp.state
+    m, extras = s["metric"], list(s["extra_metrics"])
+    columns = [(m["name"], m["direction"])] + [(e, s["extra_metrics"][e].get("direction")) for e in extras]
+    seeds = s["matrix"]["seeds"]
+    cells = st.get("cells", {})
+
+    def stats(row, col):
+        vals = []
+        for seed in seeds:
+            c = cells.get("%s|%s" % (row, seed), {})
+            if c.get("status") != "ok":
+                continue
+            v = c.get("value") if col == m["name"] else (c.get("extra") or {}).get(col)
+            if v is not None:
+                vals.append(v)
+        if not vals:
+            return None
+        return statistics.fmean(vals), (statistics.stdev(vals) if len(vals) > 1 else 0.0), len(vals)
+
+    rows = [r["name"] for r in s["matrix"]["rows"]]
+    table = {(r, c): stats(r, c) for r in rows for c, _ in columns}
+    best = {}
+    for c, direction in columns:
+        filled = [(table[(r, c)][0], r) for r in rows if table[(r, c)]]
+        if filled and direction in ("maximize", "minimize"):
+            best[c] = (max if direction == "maximize" else min)(filled)[1]
+    arrow = {"maximize": "↑", "minimize": "↓"}
+    md = ["| row | " + " | ".join("%s %s" % (c, arrow.get(d, "")) for c, d in columns) + " |",
+          "|---|" + "---|" * len(columns)]
+    tex_rows = []
+    for r in rows:
+        md_cells, tex_cells = [], []
+        for c, _ in columns:
+            t = table[(r, c)]
+            if t is None:
+                md_cells.append("·")
+                tex_cells.append(r"$\cdot$")
+                continue
+            mean, sd, n = t
+            flag = "" if n == len(seeds) else " (%d)" % n
+            bold = best.get(c) == r
+            md_cells.append(("**%.4g**" if bold else "%.4g") % mean + " ± %.2g%s" % (sd, flag))
+            body = r"%.4g_{\scriptscriptstyle %.2g}" % (mean, sd)
+            if bold:
+                body = r"\mathbf{%.4g}_{\scriptscriptstyle %.2g}" % (mean, sd)
+            tex_cells.append("$%s%s$" % (body, "" if n == len(seeds) else r"^{\scriptscriptstyle (%d)}" % n))
+        md.append("| %s | %s |" % (r, " | ".join(md_cells)))
+        tex_rows.append("%s & %s \\\\" % (r.replace("_", r"\_"), " & ".join(tex_cells)))
+    note = ("Mean and SD over seeds %s; (n) marks cells with fewer finished seeds; bold is the best filled "
+            "value per column; a dot means no finished seed yet (not run, held or failed; see REPORT.md)." % ", ".join(str(x) for x in seeds))
+    (exp.dir / "results_table.md").write_text("\n".join(md) + "\n\n" + note + "\n", encoding="utf-8")
+    header = " & ".join(r"%s %s" % (c.replace("_", r"\_"), {"maximize": r"$\uparrow$",
+                                                             "minimize": r"$\downarrow$"}.get(d, ""))
+                        for c, d in columns)
+    tex = "\n".join([
+        r"\documentclass[border=8pt]{standalone}",
+        r"\usepackage[T1]{fontenc}\usepackage{lmodern,booktabs,amsmath}",
+        r"\begin{document}",
+        r"\begin{tabular}{@{}l%s@{}}" % ("c" * len(columns)),
+        r"\toprule",
+        r"Row & %s \\" % header,
+        r"\midrule",
+        "\n".join(tex_rows),
+        r"\bottomrule",
+        r"\multicolumn{%d}{@{}l}{\footnotesize %s}" % (len(columns) + 1, note),
+        r"\end{tabular}",
+        r"\end{document}", ""])
+    tex_path = exp.dir / "results_table.tex"
+    tex_path.write_text(tex, encoding="utf-8")
+    render = s["report"].get("render_cmd")
+    if not render:
+        return None
+    png = exp.dir / "results_table.png"
+    cmd = render.format(tex=shlex.quote(str(tex_path)), dir=shlex.quote(str(exp.dir)),
+                        pdf=shlex.quote(str(exp.dir / "results_table.pdf")),
+                        png_stem=shlex.quote(str(exp.dir / "results_table")))
+    status, detail, _ = run_cmd(exp, cmd, exp.dir / "results_table.render.log", 300)
+    if status != "ok" or not png.is_file():
+        log("report.render_cmd: %s %s (see results_table.render.log)" % (status, detail))
+        return None
+    return png
+
+
+# ------------------------------------------------------------ matrix mode
+
+def matrix_cells(exp):
+    """All (row, seed) cells in seed-major order, so a cut at any time leaves whole seeds."""
+    mx = exp.spec["matrix"]
+    return [(r["name"], seed) for seed in mx["seeds"] for r in mx["rows"]]
+
+
+def held_rows(exp):
+    """Rows listed in the HOLD file (one name per line) are skipped until the line is removed."""
+    text = read_text_or_none(exp.dir / "HOLD") or ""
+    return {line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")}
+
+
+def measure_cell(exp, row, seed):
+    """Run one matrix cell, record it in state, matrix.tsv and the results table."""
+    s, st = exp.spec, exp.state
+    m = s["metric"]
+    pick = "last" if m.get("pick", "last") == "last" else "max" if m["direction"] == "maximize" else "min"
+    spec_row = next(r for r in s["matrix"]["rows"] if r["name"] == row)
+    run_dir = exp.dir / "runs" / row / ("seed_%d" % seed)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    key = "%s|%s" % (row, seed)
+    cell = st["cells"].setdefault(key, {"attempts": 0})
+    cell["attempts"] += 1
+    logp = run_dir / ("run.%d.log" % cell["attempts"])
+    exp.point_current(logp)
+    res = {"row": row, "seed": seed, "status": "ok", "detail": "", "value": None, "extra": {},
+           "attempt": cell["attempts"], "started": now()}
+    changed = exp.check_frozen()
+    if changed:
+        res["status"], res["detail"] = "violation", "frozen files were modified (now restored): %s" % ", ".join(changed)
+        dur = 0.0
+    else:
+        if m.get("json_file"):
+            try:
+                (exp.root / m["json_file"]).unlink()
+            except OSError:
+                pass
+        env = {"AR_ROW": row, "AR_SEED": str(seed)}
+        env.update({k: str(v) for k, v in (spec_row.get("env") or {}).items()})
+        status, detail, dur = run_cmd(exp, s["measurement_cmd"], logp, s["run_timeout_s"], env, s["abort_patterns"])
+        res["status"], res["detail"] = status, detail
+        if status == "ok":
+            text = logp.read_text(encoding="utf-8", errors="replace")
+            res["value"] = extract_metric(exp, m, text, pick)
+            if res["value"] is None:
+                res["status"], res["detail"] = "no_metric", "%s could not be read from the run" % m["name"]
+            for name, em in s["extra_metrics"].items():
+                ev = extract_metric(exp, em, text)
+                if ev is not None:
+                    res["extra"][name] = ev
+    res["duration_s"] = round(dur, 1)
+    write_json(run_dir / "metrics.json", res)
+    cell.update({"status": res["status"], "value": res["value"], "extra": res["extra"],
+                 "duration_s": res["duration_s"], "detail": res["detail"]})
+    retries = int(s["matrix"].get("retries", 1))
+    if res["status"] != "ok" and cell["attempts"] <= retries and res["status"] != "violation":
+        cell["status"] = "retry"   # an infrastructure fault gets another try before anyone is bothered
+    path = exp.dir / "matrix.tsv"
+    new = not path.exists()
+    with open(path, "a", encoding="utf-8") as f:
+        if new:
+            f.write("\t".join(MATRIX_TSV) + "\n")
+        row_out = {"time": now(), "row": row, "seed": seed, "status": cell["status"], "metric": res["value"],
+                   "extra": json.dumps(res["extra"]) if res["extra"] else "", "duration_s": res["duration_s"],
+                   "detail": res["detail"]}
+        f.write("\t".join(re.sub(r"\s+", " ", fmt(row_out[h])) for h in MATRIX_TSV) + "\n")
+    st["active_s"] += res["duration_s"]
+    exp.save()
+    png = write_table(exp)
+    if cell["status"] not in ("ok", "retry"):
+        escalate(exp, "block", "%s seed %d failed after %d attempt(s): %s %s"
+                 % (row, seed, cell["attempts"], res["status"], res["detail"]),
+                 ["re-run the cell after fixing the cause (delete its entry from state.json cells)",
+                  "accept it as failed and report it"], [run_dir])
+    seed_done = all(st["cells"].get("%s|%s" % (r["name"], seed), {}).get("status") in ("ok", "failed",
+                    "crash", "timeout", "aborted", "no_metric", "violation") for r in s["matrix"]["rows"])
+    if seed_done and seed not in st.setdefault("seeds_reported", []):
+        st["seeds_reported"].append(seed)
+        exp.save()
+        notify(exp, "[%s] seed %d finished for every row; results table attached" % (s["name"], seed), png)
+    return res
+
+
+def matrix_report(exp, reason):
+    """Deterministic final report for matrix mode: no model writes the conclusions of a fixed study."""
+    st = exp.state
+    png = write_table(exp)
+    failed = ["%s: %s %s" % (k, c.get("status"), c.get("detail", "")) for k, c in st["cells"].items()
+              if c.get("status") not in ("ok", None)]
+    todo = ["%s|%s" % c for c in matrix_cells(exp) if "%s|%s" % c not in st["cells"]
+            or st["cells"]["%s|%s" % c].get("status") == "retry"]
+    text = ["# %s" % exp.spec["name"], "", "Stopped: %s" % reason, "",
+            (read_text_or_none(exp.dir / "results_table.md") or ""), "",
+            "Failed cells: %s" % ("; ".join(failed) if failed else "none"),
+            "Cells not run: %s" % (", ".join(todo) if todo else "none"), "",
+            "Per-cell values: matrix.tsv and runs/<row>/seed_<seed>/metrics.json."]
+    (exp.dir / "REPORT.md").write_text("\n".join(text) + "\n", encoding="utf-8")
+    notify(exp, "[%s] finished: %s. Results table attached; REPORT.md has the details." % (exp.spec["name"], reason), png)
+
+
+def matrix_pending(exp):
+    """Cells that have not run yet or are waiting for their retry."""
+    cells = exp.state["cells"]
+    return [(r, sd) for r, sd in matrix_cells(exp)
+            if cells.get("%s|%s" % (r, sd)) is None or cells["%s|%s" % (r, sd)].get("status") == "retry"]
+
+
+def next_matrix_action(exp):
+    st = exp.state
+    if st["status"] in ("done", "halted"):
+        return {"action": st["status"] if st["status"] == "done" else "halt", "reason": st.get("stop_reason")}
+    reason = None
+    if (exp.dir / "STOP").exists():
+        reason = "stopped by a human (STOP file)"
+    elif exp.spec["budget"].get("max_hours") and st["active_s"] >= exp.spec["budget"]["max_hours"] * 3600:
+        reason = "max_hours reached"
+    held = held_rows(exp)
+    pending = matrix_pending(exp)
+    runnable = [(r, sd) for r, sd in pending if r not in held]
+    if reason is None and not pending:
+        reason = "every cell has run"
+    if reason is None and not runnable:
+        return {"action": "wait", "reason": "only held rows remain: %s (edit HOLD to release)"
+                % ", ".join(sorted({r for r, _ in pending}))}
+    if reason:
+        st["status"], st["stop_reason"] = "done", reason
+        exp.save()
+        matrix_report(exp, reason)
+        return {"action": "done", "reason": reason}
+    row, seed = runnable[0]
+    return {"action": "measure", "row": row, "seed": seed}
+
+
 # ------------------------------------------------------- files agents write
 
 def read_plan(exp, n):
@@ -667,6 +953,7 @@ def agent_task(exp, role, task, n, note=""):
 def halt(exp, reason):
     exp.state["status"], exp.state["stop_reason"] = "halted", reason
     exp.save()
+    escalate(exp, "block", "the loop halted: %s" % reason, ["fix the cause, then resume"])
     return {"action": "halt", "reason": reason}
 
 
@@ -727,6 +1014,8 @@ def close_iteration(exp, n, decision):
 def next_action(exp):
     """Advance as far as possible without an agent or a measurement; return what is needed next."""
     st = exp.state
+    if st is not None and exp.spec["mode"] == "matrix":
+        return next_matrix_action(exp)
     if st is None or st["status"] == "initialized":
         raise SpecError("run init and baseline first")
     if exp.spec["min_delta"] is None:
@@ -851,6 +1140,16 @@ def cmd_init(exp, args):
     for sub in ("runs", "best", "agent_logs"):
         (exp.dir / sub).mkdir(parents=True, exist_ok=True)
     frozen = exp.init_frozen()
+    if exp.spec["mode"] == "matrix":
+        exp.state = {"status": "ready", "stop_reason": None, "mode": "matrix", "cells": {}, "active_s": 0.0,
+                     "seeds_reported": [], "created": now()}
+        exp.save()
+        print("initialised %s (matrix mode)" % exp.dir)
+        print("  cells:  %d (%d rows x %d seeds, seed-major)" % (len(matrix_cells(exp)),
+              len(exp.spec["matrix"]["rows"]), len(exp.spec["matrix"]["seeds"])))
+        print("  frozen: %d files watched" % len(frozen))
+        print("next: driver.py run %s (or next/measure in-session)" % exp.dir)
+        return
     exp.snapshot_scope()
     exp.state = {"status": "initialized", "stop_reason": None, "iter": 0, "phase": "plan",
                  "baseline": None, "baseline_values": [], "best": None, "best_iter": 0,
@@ -870,6 +1169,8 @@ def cmd_baseline(exp, args):
     st, s = exp.state, exp.spec
     if st is None:
         raise SpecError("run init first")
+    if s["mode"] == "matrix":
+        raise SpecError("matrix mode has no baseline step: the control rows are part of the matrix")
     if st["iter"] > 0:
         raise SpecError("the loop has already started; the baseline cannot be re-measured")
     exp.restore_scope()
@@ -945,6 +1246,11 @@ def cmd_measure(exp, args):
     act = next_action(exp)
     if act["action"] != "measure":
         raise SpecError("nothing to measure now; next action is: %s" % json.dumps(act))
+    if exp.spec["mode"] == "matrix":
+        res = measure_cell(exp, act["row"], act["seed"])
+        print(json.dumps({k: res[k] for k in ("row", "seed", "status", "detail", "value", "extra", "duration_s")},
+                         indent=2))
+        return 0
     t0 = time.time()
     res = measure(exp, act["iter"])
     st["active_s"] += time.time() - t0
@@ -960,6 +1266,16 @@ def cmd_status(exp, args):
         print("not initialised")
         return 1
     print("%s: %s%s" % (s["name"], st["status"], " (%s)" % st["stop_reason"] if st.get("stop_reason") else ""))
+    if s["mode"] == "matrix":
+        cells = st["cells"]
+        done = sum(1 for c in cells.values() if c.get("status") == "ok")
+        bad = sum(1 for c in cells.values() if c.get("status") not in ("ok", "retry"))
+        print("  matrix   : %d of %d cells ok, %d failed, held rows: %s, %.2f h of runs"
+              % (done, len(matrix_cells(exp)), bad, ", ".join(sorted(held_rows(exp))) or "none",
+                 st["active_s"] / 3600))
+        write_table(exp)
+        print((read_text_or_none(exp.dir / "results_table.md") or "").rstrip())
+        return 0
     print("  metric   : %s (%s), min_delta %s" % (s["metric"]["name"], s["metric"]["direction"], s["min_delta"]))
     print("  baseline : %s" % fmt(st.get("baseline")))
     print("  best     : %s at iteration %s" % (fmt(st.get("best")), st.get("best_iter")))
@@ -1000,6 +1316,10 @@ def cmd_run(exp, args):
     if st["status"] == "halted":
         log("resuming after halt: %s" % st.get("stop_reason"))
         st.update({"status": "running", "stop_reason": None, "attempts": {}})
+    elif exp.spec["mode"] == "matrix":
+        if st["status"] == "done" and not (exp.dir / "STOP").exists() and matrix_pending(exp):
+            log("cells remain (STOP removed or cells reset): resuming")
+            st.update({"status": "running", "stop_reason": None})
     elif st["status"] in ("done", "finalizing") and stop_reason(exp) is None:
         log("the stop condition no longer holds (budget raised or STOP removed): resuming")
         for name in ("REPORT.md", "final_test.log"):
@@ -1009,14 +1329,24 @@ def cmd_run(exp, args):
     elif st["status"] == "ready":
         st["status"] = "running"
     exp.save()
-    log("driver started for %s (best %s)" % (exp.spec["name"], fmt(st.get("best"))))
+    log("driver started for %s (%s)" % (exp.spec["name"], "matrix mode" if exp.spec["mode"] == "matrix"
+                                         else "best %s" % fmt(st.get("best"))))
     failures = 0
     try:
         while True:
             t0 = time.time()
             try:
                 act = next_action(exp)
-                if act["action"] == "measure":
+                if act["action"] == "wait":
+                    log(act["reason"])
+                    time.sleep(int(os.environ.get("AR_WAIT_S", "300")))
+                    continue
+                if act["action"] == "measure" and "row" in act:
+                    log("cell %s seed %s: measuring" % (act["row"], act["seed"]))
+                    res = measure_cell(exp, act["row"], act["seed"])
+                    log("cell %s seed %s: %s value=%s %s" % (act["row"], act["seed"], res["status"],
+                                                            fmt(res["value"]), res["detail"]))
+                elif act["action"] == "measure":
                     n = act["iter"]
                     log("iteration %03d: measuring" % n)
                     res = measure(exp, n)

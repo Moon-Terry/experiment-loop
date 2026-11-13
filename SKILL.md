@@ -13,6 +13,15 @@ design -> plan -> perform -> evaluate -> validate -> decide -> (repeat)
 
 The researcher's goal is that proposed experiments continue on sound judgment while they are away, and that no compute is wasted: not on an idle GPU, not on guessed settings, not on a "win" that turns out to be noise or a bug. Everything below serves that.
 
+## Two modes
+
+| Mode | Use it when | What runs |
+|---|---|---|
+| `search` (default) | the goal is a better setting: a recipe, a hyperparameter, an ablation that keeps what works | the loop above; the director chooses each next change from the results |
+| `matrix` | the experiment is a fixed comparison: methods A, B, C over the same seeds, decided before any result | every row x seed cell once, seed-major, with no agent choosing what runs next |
+
+In matrix mode results must not steer the experiment, so there is no design, plan or decide phase and no best state: the driver runs the table, retries a cell once after a failure, escalates what stays broken, keeps one results table up to date and writes `REPORT.md` itself. Agents are optional; use them for implementation and checks outside the driver. `references/spec.md` has the `matrix` fields.
+
 Paths in this file are relative to the directory this file is in. The folder is self-contained: copy it to wherever a machine keeps its skills.
 
 ## How it works
@@ -39,11 +48,12 @@ The driver does everything that must be identical in every iteration, because th
 ## Rules that hold everywhere
 
 1. **No arbitrary choices.** Every new idea and every number set must trace to a source opened in that turn: a main-conference paper at a top-tier venue, its official code, or an industry lab's published setting. Workshop papers, blogs and recalled "typical values" do not count. An idea without a source does not run. `references/grounding.md` has the full rules; read it before proposing anything.
-2. **Never stall.** After setup, nobody is there to answer. No agent asks a question, waits for approval, or ends its work early to check in. A decision is made from the evidence on disk and its reason is written down.
+2. **Never stall the compute; escalate what only a person can decide.** After setup, nobody is there to answer in time. Operational decisions are made from the evidence on disk and their reason is written down. A decision that belongs to the researcher (scope, protocol, metric, a cell that keeps failing) goes to the inbox through `escalate`: it is appended to `inbox.jsonl`, sent through `escalation.notify_cmd` when one is set, and only the affected item waits (a held row in matrix mode, the halted loop in search mode) while everything else keeps running. The researcher answers by writing `ack/<id>.txt` or by editing the experiment files.
 3. **Select on validation only.** The metric is a validation metric. The test set is evaluated once, at the end, on the best state, and decides nothing.
 4. **One change per iteration**, so a moved metric has one cause.
 5. **Working rules in `AGENTS.md`.** How to change code (karpathy-guidelines: think first, simplest change, surgical edits, verifiable goals) and how to write for the researcher (attention-kind: bottom line first, exact numbers, warnings never cut). Follow them yourself during setup and when reporting; the driver gives them to every agent it starts.
-6. **No git.** No commits, no pushes, no remote. The best state is a file snapshot inside `.autoresearch/`. Code and logs the agents read are sent to the model API as part of their prompts, and literature lookup uses the web; nothing else leaves the machine.
+6. **Results go out as a table.** The driver keeps `results_table.md` and a booktabs `results_table.tex` up to date after every matrix cell, renders `results_table.png` when `report.render_cmd` is set, and attaches it to the notifications it sends (a seed finished for every row, the run finished). When you report results to the researcher yourself, show a table or a figure, not prose numbers.
+7. **No git.** No commits, no pushes, no remote. The best state is a file snapshot inside `.autoresearch/`. Code and logs the agents read are sent to the model API as part of their prompts, and literature lookup uses the web; nothing else leaves the machine.
 
 ## Setting up an experiment
 
@@ -74,7 +84,9 @@ The baseline is measured, never taken from memory or from what the researcher re
 
 **4. Seed the idea bank** in `<project>/.autoresearch/<name>/ideas.md`, acting as the director: read `references/director.md` and `references/grounding.md`, diagnose the baseline run, and add at least `min_ready_ideas` verified ideas. Experiments the researcher proposed go first, recorded as their instruction; look up the closest prior work for each and tell them now if you could not find support or found a contradiction, while they can still respond. Doing the first literature search with the researcher present lets them veto a direction before it costs a run.
 
-**5. Choose how it runs**, with the researcher (next section), and fill in `agents` in `experiment.json`.
+**5. Choose how it runs**, with the researcher (next section), and fill in `agents` in `experiment.json`. Set `escalation.notify_cmd` to however the researcher wants to be reached (a chat webhook, mail, a message file another session reads), and `report.render_cmd` if a LaTeX toolchain is available.
+
+**Matrix mode setup** replaces steps 3 and 4: list the rows (each with the environment variables that select its setting) and the seeds in `matrix`, run `driver.py init`, then start it. There is no baseline step and no idea bank, because the control rows are part of the table. Machine-specific placement (which GPU, how many jobs at once) belongs in `measurement_cmd` or the project's own scheduler, not in the skill.
 
 **6. Start it**, then tell the researcher in a few lines how to watch it and how to stop it.
 
@@ -107,6 +119,7 @@ It prints one JSON action:
 
 - `"action": "agent"`: `prompt_file` contains the complete instructions for that role's turn. Start a subagent with the model and effort named for that role in `experiment.json` (`agents.<role>.model`, `agents.<role>.effort`) and the prompt "Read `<prompt_file>` and carry it out." Use a different subagent for the experimenter than for the director; the independence is the point. Delegating also keeps your own context small over a long loop. If subagents are unavailable, carry out the prompt file yourself.
 - `"action": "measure"`: run `python3 scripts/driver.py measure <exp-dir>`, in the background when a run takes more than a couple of minutes.
+- `"action": "wait"` (matrix mode): only rows listed in `HOLD` remain. Report it and stop; resume when the researcher releases them.
 - `"action": "done"` or `"halt"`: stop and report.
 
 Call `next` only after the previous action has finished: it restores the best state before each experimenter turn.
@@ -117,6 +130,8 @@ Call `next` only after the previous action has finished: it restores the best st
 |---|---|
 | Progress | `python3 scripts/driver.py status <exp-dir>`; attach to the tmux session; read `journal.md` |
 | Stop cleanly | `touch <exp-dir>/STOP`: the current iteration finishes, the project is left in its best state, `REPORT.md` is written |
+| Hold rows (matrix) | list row names in `<exp-dir>/HOLD`, one per line; remove a line to release it |
+| Answer an escalation | read `inbox.jsonl`, write `ack/<id>.txt`, change what is needed, resume |
 | Stop now | kill the tmux session; state is saved and nothing is lost but the run in progress |
 | Resume | run `launch.sh` again (or continue calling `next`) |
 | Run longer | raise the budget in `experiment.json` (and remove `STOP`), then resume |
@@ -139,6 +154,10 @@ A `halt` means the loop stopped because continuing would have been unsafe or poi
   agent_logs/       prompt and output of every agent turn
   REPORT.md         final report
   STOP              create this file to stop
+  inbox.jsonl       decisions waiting for the researcher (escalate); answers go in ack/<id>.txt
+  HOLD              matrix mode: rows to skip until released
+  matrix.tsv        matrix mode: one row per cell attempt
+  results_table.*   matrix mode: the results table (md, tex, png when report.render_cmd is set)
 ```
 
 ## Reference files

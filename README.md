@@ -12,6 +12,8 @@ A Claude Code skill that keeps ML experiments running while you are away: design
 - **Three parts.** A driver program measures every change and keeps the best-validation state. A director model picks ideas and judges results. A second model implements.
 - **No guessed settings.** Every idea cites a top-tier conference (main track) or journal paper, its official code, or an industry lab's setting, opened and quoted that turn. No source, no run.
 - **No noise wins.** A change is kept only if it beats the best by more than `min_delta`, set from the measured seed noise. The loop does not start without it.
+- **Two modes.** `search` improves a setting step by step; `matrix` runs a fixed, pre-registered rows x seeds table with retries, holds and one results table, so results cannot steer it.
+- **Escalation, not silence.** Decisions only the researcher can make go to an inbox and a notification command; only the affected item waits.
 - **No git.** Nothing is committed or pushed. Prompts, including the code agents read, go to the model API.
 
 <p align="center">

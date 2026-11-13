@@ -52,6 +52,7 @@ This covers everything a person reads: setup questions and answers in chat, `REP
 
 - **Outcome first.** Open with the result and the decision it supports, e.g. "Best val_acc 0.962 (iteration 4), +0.031 over the 0.931 baseline; stopped at max_iterations."
 - **Numbers over adjectives.** Give values, seeds, thresholds and the conditions a result holds under. "Improved a lot" tells the reader nothing they can act on.
+- **Results as a table or figure.** When a report compares numbers across settings, give a table (the driver's `results_table.*` in matrix mode) or a figure, with one or two lines of interpretation, not paragraphs of numbers.
 - **Problems where they are seen.** A failed check, an unverified source, a crash or a result inside the noise goes next to the claim it affects, never only at the end.
 - **Point to detail instead of copying it.** The full record is in `results.tsv`, `journal.md` and `runs/NNN/`; summarise and name the file.
 - **Full detail on request.** When the researcher asks for depth, give every number and caveat, still in short, scannable blocks.

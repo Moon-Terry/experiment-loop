@@ -11,6 +11,8 @@ Once the loop has started, treat it as fixed. Changing the metric, the measureme
 - [What may and may not change](#what-may-and-may-not-change)
 - [When the loop stops](#when-the-loop-stops)
 - [Agents](#agents)
+- [Matrix mode](#matrix-mode)
+- [Escalation and reporting](#escalation-and-reporting)
 - [Other fields](#other-fields)
 - [Worked examples](#worked-examples)
 
@@ -104,6 +106,30 @@ Set the effort level explicitly: a headless call without `--effort` runs at what
 The director gets no shell: it reads, searches the web and writes files. The experimenter needs a shell for the smoke test, which means it can run any command, so only use this in a project and on a machine where that is acceptable. Using a stronger model to direct and judge and a second model to implement gives the judgment independence from the implementation.
 
 Another agent CLI can be used the same way if one command runs one turn, takes the prompt as its last argument, and has the tools that role needs. Only Claude Code has been tested.
+
+## Matrix mode
+
+Set `"mode": "matrix"` for a fixed comparison decided before any result. `scope`, `budget`, `min_delta`, `baseline` and the idea bank are not used; `frozen` still is.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `mode` | `search` | `search` or `matrix`. |
+| `matrix.rows` | required | `[{"name": "mine", "env": {"AUG": "mine"}}, ...]`. Names use letters, digits and `_ . + -`. Each run gets `AR_ROW` and the row's `env`. |
+| `matrix.seeds` | required | `[42, 43, 44, 45, 46]`. Each run gets its seed in `AR_SEED`. Cells run seed-major, so stopping at any time leaves whole seeds. |
+| `matrix.retries` | 1 | Extra attempts after a crash, timeout, abort or unreadable metric, for infrastructure faults. A cell that still fails is escalated and reported as failed; the table goes on. |
+| `budget.max_hours` | none | Optional; counted over the run time of the cells. |
+
+Rows named in the `HOLD` file are skipped until released. To re-run a cell after fixing its cause, delete its entry from `cells` in `state.json` and resume.
+
+## Escalation and reporting
+
+| Field | Default | Meaning |
+|---|---|---|
+| `escalation.notify_cmd` | none | Shell command run for every notification. It gets the text in `AR_MESSAGE` (also as a file, `AR_MESSAGE_FILE`) and an image path in `AR_ATTACHMENT` (empty when there is none). Use it for a webhook, mail or a message file another session reads. A failure is logged and never stops the loop. |
+| `escalation.inbox` | `inbox.jsonl` | Where escalated decisions are appended, one JSON object per line with `id`, `severity`, `what`, `options` and `evidence`. Answers go in `ack/<id>.txt`. |
+| `report.render_cmd` | none | Command that turns `results_table.tex` into `results_table.png`, with placeholders `{tex}`, `{pdf}`, `{png_stem}`, `{dir}`, for example `tectonic -X compile {tex} && pdftoppm -png -r 150 -singlefile {pdf} {png_stem}`. Without it the table is kept as Markdown and LaTeX only. |
+
+The driver escalates when the search loop halts and when a matrix cell fails after its retries. It notifies, with the table attached, when every row has finished a seed and when a matrix run finishes. Put the column direction of an extra metric in `extra_metrics.<name>.direction` (`maximize` or `minimize`) to have its best value marked in the table.
 
 ## Other fields
 

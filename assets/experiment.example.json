@@ -2,6 +2,7 @@
   "name": "my-experiment",
   "goal": "What should improve, and under which constraints (fixed budget, fixed architecture, ...).",
   "language": "en",
+  "mode": "search",
 
   "metric": {
     "name": "val_acc",
@@ -36,6 +37,9 @@
 
   "validation_rules": [],
   "extra_venues": [],
+
+  "escalation": {"notify_cmd": null, "inbox": "inbox.jsonl"},
+  "report": {"render_cmd": null},
 
   "agents": {
     "director": {
