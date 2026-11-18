@@ -67,7 +67,7 @@ At least one of these is required, so that "forever" is always a deliberate choi
 | Field | Meaning |
 |---|---|
 | `budget.max_iterations` | Stop after this many iterations. |
-| `budget.max_hours` | Stop after this much wall-clock time. Checked between iterations. |
+| `budget.max_hours` | Stop after this much driver run time, accumulated across resumes. Checked between iterations. |
 | `budget.patience` | Stop after this many iterations in a row without improvement. |
 | `metric.target` | Stop when the best value reaches the target. |
 | `budget.unbounded` | `true`: run until a person creates the `STOP` file. |

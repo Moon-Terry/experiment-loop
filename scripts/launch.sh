@@ -54,4 +54,4 @@ else
 fi
 echo "  status: $STATUS"
 echo "  stop  : touch $EXP/STOP           (finishes the current iteration, then writes REPORT.md)"
-echo "  resume: run this launcher again; the loop continues from the saved state"
+echo "  resume: tmux kill-session -t $NAME (if it still exists), then run this launcher again; the loop continues from the saved state"

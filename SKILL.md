@@ -138,7 +138,7 @@ Call `next` only after the previous action has finished: it restores the best st
 | Resume | `tmux kill-session -t ar-<name>` if the session is still open, then run `launch.sh` again (or continue calling `next`) |
 | Run longer | raise the budget in `experiment.json` (and remove `STOP`), then resume |
 
-When the loop ends, the project is in its best-validation state with the matching checkpoint in place, and `REPORT.md` holds the outcome. When the researcher asks how it went, read `REPORT.md` and `results.tsv` and answer under `AGENTS.md` part 2: the outcome in the first sentence with exact numbers, anything that needs their attention next, and where the rest is.
+When the loop ends, the project is in its best-validation state with the matching checkpoint in place (when `artifacts` is set), and `REPORT.md` holds the outcome. When the researcher asks how it went, read `REPORT.md` and `results.tsv` and answer under `AGENTS.md` part 2: the outcome in the first sentence with exact numbers, anything that needs their attention next, and where the rest is.
 
 A `halt` means the loop stopped because continuing would have been unsafe or pointless: the director could not produce a sourced plan in three attempts (the idea bank is exhausted or web access is gone). The reason is in `status`. Fix the cause and resume.
 

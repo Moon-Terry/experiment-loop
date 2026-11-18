@@ -10,8 +10,8 @@ Use experiment-loop in matrix mode. Rows: no augmentation, the default recipe, a
 matched-strength affine control, RandAugment, TrivialAugment and my method. Seeds
 42-46, seed-major. Every row uses the same training budget and the same evaluation
 script with the same flags. Retry a failed cell once. Notify me only for cells that
-still fail, when a seed is complete for every row and when the run finishes, with
-the table image attached.
+still fail, when a seed is complete for every row and when the run finishes; attach
+the table image to the seed and finish messages.
 ```
 
 ## Key fields

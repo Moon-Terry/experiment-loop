@@ -66,8 +66,7 @@ bash ~/.claude/skills/experiment-loop/scripts/launch.sh .autoresearch/<name>
 
 - **Models:** the director should be the strongest frontier model you have, the experimenter a daily model. The defaults are Fable 5.2 at `high` directing and Opus 5.5 at `medium` implementing; change them in `experiment.json` as new models appear.
 - **Warning:** the experimenter runs shell commands without confirmation. Use a machine and project where that is acceptable.
-
-- **Notifications:** set `escalation.notify_cmd` to any shell command. It receives the text in `AR_MESSAGE` and the results-table image in `AR_ATTACHMENT`. Pairing it with a chat bot works well: a short script that posts to a Discord or Telegram bot, or writes a message file that a Claude Code session with a Discord or Telegram channel plugin relays to you.
+- **Notifications:** set `escalation.notify_cmd` to any shell command. It receives the text in `AR_MESSAGE` and, in matrix mode with `report.render_cmd` set, the results-table image in `AR_ATTACHMENT` (empty otherwise). Search mode notifies only when the loop halts; matrix mode also when a seed completes and when the run finishes. Pairing it with a chat bot works well: a short script that posts to a Discord or Telegram bot, or writes a message file that another Claude Code session, set up to poll it, relays through a Discord or Telegram channel plugin.
 
 Worked examples, from an overnight search to a fixed paper table: see [usage-cases/](usage-cases/).
 
@@ -77,7 +76,7 @@ Worked examples, from an overnight search to a fixed paper table: see [usage-cas
 | --- | --- |
 | Progress | `driver.py status .autoresearch/<name>` or `tmux attach -t ar-<name>` |
 | Stop cleanly | `touch .autoresearch/<name>/STOP` |
-| Resume / run longer | raise the budget, `tmux kill-session -t ar-<name>`, run `launch.sh` again |
+| Resume / run longer | raise the budget, remove `STOP` if present, `tmux kill-session -t ar-<name>`, run `launch.sh` again |
 
 Results stay in `.autoresearch/<name>/`:
 

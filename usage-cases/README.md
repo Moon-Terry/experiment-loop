@@ -2,6 +2,10 @@
 
 Worked examples of what to type and what comes back. Pick the case closest to your situation.
 
+<p align="center">
+  <img src="../assets/usage-cases.svg" alt="Decision flow for choosing a usage case" width="900">
+</p>
+
 | Situation | Mode | File |
 | --- | --- | --- |
 | One model, one validation metric, a night of idle GPU | `search` | [01-overnight-recipe-search.md](01-overnight-recipe-search.md) |
