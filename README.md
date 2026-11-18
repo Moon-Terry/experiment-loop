@@ -23,12 +23,6 @@ A Claude Code skill that keeps ML experiments running while you are away: design
   One iteration. The parts exchange only files, so every turn starts fresh and the loop survives restarts.
 </div>
 
-## Status
-
-- **Driver self-test:** 9 of 9 tests pass (full loop with keep and discard, stop conditions, minimized JSON metric, timeout and abort, agent failures, resume after kill, in-session, spec errors, matrix).
-- **One full real run:** a frontier model directing (Fable 5.2) and a daily model implementing (Opus 5.5), 3 iterations. Kept 2 sourced changes, discarded 1 inside the noise, evaluation files untouched.
-- **Not yet tested:** tmux path of `launch.sh` (ran via `screen` on macOS), Linux, the final-report turn, a completed in-session run.
-
 ## Installation
 
 ```shell
