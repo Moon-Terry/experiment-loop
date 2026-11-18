@@ -32,7 +32,7 @@ Three parts, kept apart on purpose.
 |---|---|---|
 | **Driver** | a program, `scripts/driver.py` | Runs the measurement, reads the metric, keeps the best-validation state, undoes failed ideas, protects the evaluation files, decides when to stop. |
 | **Director** | a model, ideally the strongest available | Diagnoses results, finds the next idea in the literature, writes the plan; later validates the result and decides keep or discard. Has no shell and edits no project code. |
-| **Experimenter** | a second model | Checks the plan's source, implements exactly the plan, smoke-tests it. |
+| **Experimenter** | a second model, a daily model is enough | Checks the plan's source, implements exactly the plan, smoke-tests it. |
 
 The driver does everything that must be identical in every iteration, because that should not depend on a model's attention at 4 a.m. The models do the judgment. The director judges work it did not write, which is what makes its validation worth something. The parts talk only through files in `<project>/.autoresearch/<name>/`, so the loop survives crashes, restarts, rate limits and context limits: each agent turn starts fresh and reads the state from disk.
 
@@ -62,6 +62,8 @@ Setup is the only interactive part, and the last moment the researcher can corre
 **0. Once per machine**, check the driver works there: `python3 scripts/selftest.py` (under a minute; needs no model, network or GPU).
 
 **1. Read the project.** Find the training entry point, how and where the validation metric is printed, where settings live, where checkpoints are saved, how long one run takes, and what defines the evaluation (splits, evaluation code, test set, training budget). If the project lacks something the loop depends on, fix that with the researcher now, as ordinary coding work under `AGENTS.md` part 1: a validation metric printed per epoch or written to a file, a seed taken from the `AR_SEED` environment variable, a fixed training budget, model selection that does not look at the test set.
+
+**1b. Find the closest worked example.** `usage-cases/README.md` lists typical situations; read only the file that matches the researcher's request and reuse its fields and warnings.
 
 **2. Write the definition** at `<project>/.autoresearch/<name>/experiment.json`, starting from `assets/experiment.example.json`. `references/spec.md` explains every field. Settle with the researcher:
 
@@ -133,7 +135,7 @@ Call `next` only after the previous action has finished: it restores the best st
 | Hold rows (matrix) | list row names in `<exp-dir>/HOLD`, one per line; remove a line to release it |
 | Answer an escalation | read `inbox.jsonl`, write `ack/<id>.txt`, change what is needed, resume |
 | Stop now | kill the tmux session; state is saved and nothing is lost but the run in progress |
-| Resume | run `launch.sh` again (or continue calling `next`) |
+| Resume | `tmux kill-session -t ar-<name>` if the session is still open, then run `launch.sh` again (or continue calling `next`) |
 | Run longer | raise the budget in `experiment.json` (and remove `STOP`), then resume |
 
 When the loop ends, the project is in its best-validation state with the matching checkpoint in place, and `REPORT.md` holds the outcome. When the researcher asks how it went, read `REPORT.md` and `results.tsv` and answer under `AGENTS.md` part 2: the outcome in the first sentence with exact numbers, anything that needs their attention next, and where the rest is.

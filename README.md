@@ -9,7 +9,7 @@
 
 A Claude Code skill that keeps ML experiments running while you are away: design, plan, perform, evaluate, validate, decide, repeat.
 
-- **Three parts.** A driver program measures every change and keeps the best-validation state. A director model picks ideas and judges results. A second model implements.
+- **Three parts.** A driver program measures every change and keeps the best-validation state. A frontier model directs: it picks ideas and judges results. A daily model implements.
 - **No guessed settings.** Every idea cites a top-tier conference (main track) or journal paper, its official code, or an industry lab's setting, opened and quoted that turn. No source, no run.
 - **No noise wins.** A change is kept only if it beats the best by more than `min_delta`, set from the measured seed noise. The loop does not start without it.
 - **Two modes.** `search` improves a setting step by step; `matrix` runs a fixed, pre-registered rows x seeds table with retries, holds and one results table, so results cannot steer it.
@@ -25,8 +25,8 @@ A Claude Code skill that keeps ML experiments running while you are away: design
 
 ## Status
 
-- **Driver self-test:** 8 of 8 scenarios pass (keep, discard, crash, timeout, abort, frozen-file violation, restart, in-session).
-- **One full real run:** Fable 5.2 directing, Opus 5.5 implementing, 3 iterations. Kept 2 sourced changes, discarded 1 inside the noise, evaluation files untouched.
+- **Driver self-test:** 9 of 9 tests pass (full loop with keep and discard, stop conditions, minimized JSON metric, timeout and abort, agent failures, resume after kill, in-session, spec errors, matrix).
+- **One full real run:** a frontier model directing (Fable 5.2) and a daily model implementing (Opus 5.5), 3 iterations. Kept 2 sourced changes, discarded 1 inside the noise, evaluation files untouched.
 - **Not yet tested:** tmux path of `launch.sh` (ran via `screen` on macOS), Linux, the final-report turn, a completed in-session run.
 
 ## Installation
@@ -64,8 +64,12 @@ bash ~/.claude/skills/experiment-loop/scripts/launch.sh .autoresearch/<name>
   In tmux the loop survives a closed terminal. In-session it stops when the session stops.
 </div>
 
-- **Models:** Opus 5.5 at `medium` implements, Fable 5.2 at `high` directs (Anthropic's recommended starting points). Change them in `experiment.json`.
+- **Models:** the director should be the strongest frontier model you have, the experimenter a daily model. The defaults are Fable 5.2 at `high` directing and Opus 5.5 at `medium` implementing; change them in `experiment.json` as new models appear.
 - **Warning:** the experimenter runs shell commands without confirmation. Use a machine and project where that is acceptable.
+
+- **Notifications:** set `escalation.notify_cmd` to any shell command. It receives the text in `AR_MESSAGE` and the results-table image in `AR_ATTACHMENT`. Pairing it with a chat bot works well: a short script that posts to a Discord or Telegram bot, or writes a message file that a Claude Code session with a Discord or Telegram channel plugin relays to you.
+
+Worked examples, from an overnight search to a fixed paper table: see [usage-cases/](usage-cases/).
 
 ## While it runs
 
@@ -73,7 +77,7 @@ bash ~/.claude/skills/experiment-loop/scripts/launch.sh .autoresearch/<name>
 | --- | --- |
 | Progress | `driver.py status .autoresearch/<name>` or `tmux attach -t ar-<name>` |
 | Stop cleanly | `touch .autoresearch/<name>/STOP` |
-| Resume / run longer | raise the budget, run `launch.sh` again |
+| Resume / run longer | raise the budget, `tmux kill-session -t ar-<name>`, run `launch.sh` again |
 
 Results stay in `.autoresearch/<name>/`:
 
@@ -89,9 +93,14 @@ Results stay in `.autoresearch/<name>/`:
 - `references/`: grounding rules, role instructions, `experiment.json` fields (`spec.md`)
 - `scripts/`: `driver.py` (the loop), `launch.sh`, `selftest.py`
 - `evals/`: three test cases
+- `usage-cases/`: worked examples
 
 ## Acknowledgments
 
 - Loop design follows [karpathy/autoresearch](https://github.com/karpathy/autoresearch).
-- Part 1 of `AGENTS.md` is adapted from [karpathy-guidelines](https://github.com/multica-ai/andrej-karpathy-skills) by forrestchang (MIT License).
+- Part 1 of `AGENTS.md` is adapted from [karpathy-guidelines](https://github.com/multica-ai/andrej-karpathy-skills) by forrestchang (MIT License); the upstream repository declares MIT in its README and has no separate LICENSE file.
 - The reporting rules in part 2 of `AGENTS.md` were inspired by the attention-kind style of [attention-span](https://github.com/alexgreensh/attention-span); the text is our own.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
